@@ -55,8 +55,8 @@
     }
   },
   "bundle": {
-    "active": false,
-    "targets": "all",
+    "active": true,
+    "targets": ["app", "dmg"],
     "externalBin": ["binaries/readflow-ai-runtime"],
     "icon": ["icons/icon.png"]
   }
