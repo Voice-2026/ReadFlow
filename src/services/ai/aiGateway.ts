@@ -1,6 +1,8 @@
 export type AiTask =
   | "translate"
   | "quick-translate"
+  | "quick-explain"
+  | "quick-explain-chat"
   | "analyze-vocabulary"
   | "generate-reading"
   | "evaluate-reading"

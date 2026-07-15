@@ -13,6 +13,7 @@ import {
 } from "../services/ai/aiGateway";
 import {
   getQuickCaptureStatus,
+  getQuickExplanationStatus,
   listenForQuickCapture,
   type QuickCapturePayload,
   type QuickCaptureStatus,
@@ -46,6 +47,12 @@ export function App() {
     shortcutValue: "CommandOrControl+Shift+Space",
     message: "正在注册全局快捷键",
   });
+  const [quickExplanationStatus, setQuickExplanationStatus] = useState<QuickCaptureStatus>({
+    registered: false,
+    shortcut: "⌘⇧E",
+    shortcutValue: "CommandOrControl+Shift+KeyE",
+    message: "正在注册划词理解快捷键",
+  });
   const [capturedSelection, setCapturedSelection] = useState<CapturedSelection | null>(null);
   const {
     learners,
@@ -58,6 +65,7 @@ export function App() {
   useEffect(() => {
     void getAiConfigurationStatus().then(setAiStatus);
     void getQuickCaptureStatus().then(setQuickCaptureStatus);
+    void getQuickExplanationStatus().then(setQuickExplanationStatus);
   }, []);
 
   const consumeCapturedSelection = useCallback(() => {
@@ -135,7 +143,6 @@ export function App() {
         {workspace === "translation" && (
           <TranslationWorkspace
             learner={activeLearner}
-            quickCaptureStatus={quickCaptureStatus}
             capturedSelection={capturedSelection}
             onCaptureConsumed={consumeCapturedSelection}
           />
@@ -149,6 +156,8 @@ export function App() {
             onAiStatusChange={setAiStatus}
             quickCaptureStatus={quickCaptureStatus}
             onQuickCaptureStatusChange={setQuickCaptureStatus}
+            quickExplanationStatus={quickExplanationStatus}
+            onQuickExplanationStatusChange={setQuickExplanationStatus}
           />
         )}
       </main>

@@ -69,6 +69,65 @@ export type QuickTranslationResult = {
   translation: string;
 };
 
+export type QuickExplanationTerm = {
+  term: string;
+  meaning: string;
+};
+
+export type QuickExplanationResult = {
+  sourceLanguage: "zh" | "en" | "mixed";
+  overview: string;
+  explanation: string;
+  keyPoints: string[];
+  terms: QuickExplanationTerm[];
+  toneAndIntent: string;
+  translation?: string | null;
+};
+
+export type QuickTranslationHistoryRecord = {
+  id: string;
+  learnerId: string;
+  sourceText: string;
+  result: QuickTranslationResult;
+  createdAt: string;
+};
+
+export type QuickExplanationHistoryRecord = {
+  id: string;
+  learnerId: string;
+  sourceText: string;
+  result: QuickExplanationResult;
+  createdAt: string;
+};
+
+export type QuickExplanationChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sources?: WebSource[];
+  toolActivities?: AgentToolActivity[];
+};
+
+export type QuickExplanationChatResult = {
+  answer: string;
+  sources: WebSource[];
+  toolActivities: AgentToolActivity[];
+};
+
+export type WebSource = {
+  title: string;
+  url: string;
+  snippet?: string;
+};
+
+export type AgentToolActivity = {
+  kind: "search" | "fetch";
+  status: "completed" | "failed";
+  label: string;
+  query?: string;
+  url?: string;
+};
+
 export type ReadingAttempt = {
   id: string;
   learnerId: string;

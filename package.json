@@ -14,10 +14,14 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.80.6",
     "@earendil-works/pi-ai": "^0.80.6",
+    "@phosphor-icons/react": "^2.1.10",
     "@tauri-apps/api": "^2.8.0",
+    "@tauri-apps/plugin-shell": "^2.3.5",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "typebox": "^1.1.38"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.0",

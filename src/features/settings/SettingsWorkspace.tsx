@@ -9,6 +9,7 @@ import {
 } from "../../services/ai/aiGateway";
 import {
   updateQuickCaptureShortcut,
+  updateQuickExplanationShortcut,
   type QuickCaptureStatus,
 } from "../../services/desktop/quickCapture";
 
@@ -17,6 +18,8 @@ type SettingsWorkspaceProps = {
   onAiStatusChange: (status: AiConfigurationStatus) => void;
   quickCaptureStatus: QuickCaptureStatus;
   onQuickCaptureStatusChange: (status: QuickCaptureStatus) => void;
+  quickExplanationStatus: QuickCaptureStatus;
+  onQuickExplanationStatusChange: (status: QuickCaptureStatus) => void;
 };
 
 const modifierCodes = new Set([
@@ -79,12 +82,21 @@ export function SettingsWorkspace({
   onAiStatusChange,
   quickCaptureStatus,
   onQuickCaptureStatusChange,
+  quickExplanationStatus,
+  onQuickExplanationStatusChange,
 }: SettingsWorkspaceProps) {
   const [recording, setRecording] = useState(false);
   const [pendingShortcut, setPendingShortcut] = useState(quickCaptureStatus.shortcutValue);
   const [message, setMessage] = useState(quickCaptureStatus.message);
   const [saving, setSaving] = useState(false);
   const recorderRef = useRef<HTMLButtonElement>(null);
+  const [recordingExplanation, setRecordingExplanation] = useState(false);
+  const [pendingExplanationShortcut, setPendingExplanationShortcut] = useState(
+    quickExplanationStatus.shortcutValue,
+  );
+  const [explanationMessage, setExplanationMessage] = useState(quickExplanationStatus.message);
+  const [savingExplanation, setSavingExplanation] = useState(false);
+  const explanationRecorderRef = useRef<HTMLButtonElement>(null);
   const [provider, setProvider] = useState<AiProvider>(aiStatus.provider);
   const [baseUrl, setBaseUrl] = useState(aiStatus.baseUrl);
   const [model, setModel] = useState(aiStatus.model ?? "");
@@ -100,6 +112,11 @@ export function SettingsWorkspace({
     setPendingShortcut(quickCaptureStatus.shortcutValue);
     setMessage(quickCaptureStatus.message);
   }, [quickCaptureStatus]);
+
+  useEffect(() => {
+    setPendingExplanationShortcut(quickExplanationStatus.shortcutValue);
+    setExplanationMessage(quickExplanationStatus.message);
+  }, [quickExplanationStatus]);
 
   useEffect(() => {
     setProvider(aiStatus.provider);
@@ -150,6 +167,50 @@ export function SettingsWorkspace({
       setMessage(error instanceof Error ? error.message : "保存快捷键失败");
     } finally {
       setSaving(false);
+    }
+  }
+
+  function beginExplanationRecording() {
+    setRecordingExplanation(true);
+    setExplanationMessage("请按下新的快捷键组合，Esc 取消");
+    requestAnimationFrame(() => explanationRecorderRef.current?.focus());
+  }
+
+  function captureExplanationShortcut(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (!recordingExplanation) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.code === "Escape") {
+      setRecordingExplanation(false);
+      setExplanationMessage("已取消录制");
+      return;
+    }
+    if (modifierCodes.has(event.code)) {
+      setExplanationMessage("继续按下一个字母、数字或功能键");
+      return;
+    }
+
+    try {
+      const shortcut = shortcutFromEvent(event);
+      setPendingExplanationShortcut(shortcut);
+      setRecordingExplanation(false);
+      setExplanationMessage("新组合已录制，保存后立即生效");
+    } catch (error) {
+      setExplanationMessage(error instanceof Error ? error.message : "无法识别这个快捷键");
+    }
+  }
+
+  async function saveExplanationShortcut() {
+    setSavingExplanation(true);
+    try {
+      const status = await updateQuickExplanationShortcut(pendingExplanationShortcut);
+      onQuickExplanationStatusChange(status);
+      setExplanationMessage("快捷键已保存并立即生效");
+    } catch (error) {
+      setExplanationMessage(error instanceof Error ? error.message : "保存快捷键失败");
+    } finally {
+      setSavingExplanation(false);
     }
   }
 
@@ -263,6 +324,45 @@ export function SettingsWorkspace({
 
         <div className={`settings-message ${quickCaptureStatus.registered ? "ready" : "error"}`}>
           {message}
+        </div>
+      </article>
+
+      <article className="settings-card shortcut-settings-card">
+        <div>
+          <span className="settings-label">划词理解快捷键</span>
+          <h2>选中文或英文，快速获得中文解读</h2>
+          <p>AI 会说明主旨、重点、关键表达和语气意图；英文内容会按需附上参考译文。</p>
+        </div>
+
+        <div className="shortcut-configurator">
+          <div className="shortcut-current">
+            <span>当前组合</span>
+            <kbd>{formatShortcutValue(pendingExplanationShortcut)}</kbd>
+          </div>
+          <button
+            ref={explanationRecorderRef}
+            className={`shortcut-recorder ${recordingExplanation ? "recording" : ""}`}
+            onClick={beginExplanationRecording}
+            onKeyDown={captureExplanationShortcut}
+          >
+            {recordingExplanation ? "正在录制，请按组合键…" : "录制新快捷键"}
+          </button>
+          <button
+            className="primary-button"
+            disabled={
+              savingExplanation ||
+              pendingExplanationShortcut === quickExplanationStatus.shortcutValue
+            }
+            onClick={() => void saveExplanationShortcut()}
+          >
+            {savingExplanation ? "正在保存…" : "保存并启用"}
+          </button>
+        </div>
+
+        <div
+          className={`settings-message ${quickExplanationStatus.registered ? "ready" : "error"}`}
+        >
+          {explanationMessage}
         </div>
       </article>
 

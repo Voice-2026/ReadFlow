@@ -11,10 +11,7 @@ import type {
   VocabularyState,
   VocabularySuggestion,
 } from "../../shared/types";
-import type {
-  QuickCapturePayload,
-  QuickCaptureStatus,
-} from "../../services/desktop/quickCapture";
+import type { QuickCapturePayload } from "../../services/desktop/quickCapture";
 
 type TranslationMode = "natural" | "literal" | "explain";
 
@@ -26,14 +23,12 @@ const vocabularyStateLabels: Record<VocabularyState, string> = {
 
 type TranslationWorkspaceProps = {
   learner: Learner;
-  quickCaptureStatus: QuickCaptureStatus;
   capturedSelection: (QuickCapturePayload & { id: number }) | null;
   onCaptureConsumed: () => void;
 };
 
 export function TranslationWorkspace({
   learner,
-  quickCaptureStatus,
   capturedSelection,
   onCaptureConsumed,
 }: TranslationWorkspaceProps) {
@@ -141,7 +136,7 @@ export function TranslationWorkspace({
   }
 
   return (
-    <section className="workspace">
+    <section className="workspace translation-workspace">
       <header className="workspace-header">
         <div>
           <span className="eyebrow">AI Translator</span>
@@ -159,11 +154,6 @@ export function TranslationWorkspace({
           />
         </label>
       </header>
-
-      <div className={`quick-capture-hint ${quickCaptureStatus.registered ? "ready" : "error"}`}>
-        <kbd>{quickCaptureStatus.shortcut}</kbd>
-        <span>{quickCaptureStatus.message}</span>
-      </div>
 
       <div className="mode-tabs" aria-label="翻译模式">
         {([

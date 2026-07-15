@@ -1,10 +1,21 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf, str::FromStr, sync::Mutex};
+use std::{
+    fs,
+    path::PathBuf,
+    str::FromStr,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
+    time::Duration,
+};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-const CAPTURE_EVENT: &str = "quick-translation-captured";
-const DEFAULT_SHORTCUT: &str = "CommandOrControl+Shift+Space";
+const TRANSLATION_EVENT: &str = "quick-translation-captured";
+const EXPLANATION_EVENT: &str = "quick-explanation-captured";
+const DEFAULT_TRANSLATION_SHORTCUT: &str = "CommandOrControl+Shift+Space";
+const DEFAULT_EXPLANATION_SHORTCUT: &str = "CommandOrControl+Shift+KeyE";
 const CONFIG_FILE: &str = "quick-capture.json";
 
 #[derive(Clone, Serialize)]
@@ -16,100 +27,218 @@ pub struct QuickCaptureStatus {
     pub message: String,
 }
 
-pub struct QuickCaptureState {
-    status: Mutex<QuickCaptureStatus>,
+#[derive(Clone)]
+struct QuickCaptureStatuses {
+    translation: QuickCaptureStatus,
+    explanation: QuickCaptureStatus,
 }
 
-#[derive(Deserialize, Serialize)]
+pub struct QuickCaptureState {
+    statuses: Mutex<QuickCaptureStatuses>,
+    latest_payloads: Mutex<QuickCapturePayloads>,
+    next_payload_id: AtomicU64,
+}
+
+#[derive(Default)]
+struct QuickCapturePayloads {
+    translation: Option<QuickCapturePayload>,
+    explanation: Option<QuickCapturePayload>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CaptureKind {
+    Translation,
+    Explanation,
+}
+
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct QuickCaptureConfig {
-    shortcut: String,
+    translation_shortcut: String,
+    explanation_shortcut: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuickCaptureConfigFile {
+    shortcut: Option<String>,
+    translation_shortcut: Option<String>,
+    explanation_shortcut: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct QuickCapturePayload {
+pub struct QuickCapturePayload {
+    id: u64,
     text: Option<String>,
     error: Option<String>,
     shortcut: String,
 }
 
 impl QuickCaptureState {
-    pub fn new(status: QuickCaptureStatus) -> Self {
+    fn new(translation: QuickCaptureStatus, explanation: QuickCaptureStatus) -> Self {
         Self {
-            status: Mutex::new(status),
+            statuses: Mutex::new(QuickCaptureStatuses {
+                translation,
+                explanation,
+            }),
+            latest_payloads: Mutex::new(QuickCapturePayloads::default()),
+            next_payload_id: AtomicU64::new(1),
         }
     }
 
-    pub fn status(&self) -> QuickCaptureStatus {
-        self.status
-            .lock()
-            .expect("quick capture status lock poisoned")
-            .clone()
+    pub fn translation_status(&self) -> QuickCaptureStatus {
+        self.status(CaptureKind::Translation)
     }
 
-    fn replace_status(&self, status: QuickCaptureStatus) {
-        *self
-            .status
+    pub fn explanation_status(&self) -> QuickCaptureStatus {
+        self.status(CaptureKind::Explanation)
+    }
+
+    fn status(&self, kind: CaptureKind) -> QuickCaptureStatus {
+        let statuses = self
+            .statuses
             .lock()
-            .expect("quick capture status lock poisoned") = status;
+            .expect("quick capture status lock poisoned");
+        match kind {
+            CaptureKind::Translation => statuses.translation.clone(),
+            CaptureKind::Explanation => statuses.explanation.clone(),
+        }
+    }
+
+    fn replace_status(&self, kind: CaptureKind, status: QuickCaptureStatus) {
+        let mut statuses = self
+            .statuses
+            .lock()
+            .expect("quick capture status lock poisoned");
+        match kind {
+            CaptureKind::Translation => statuses.translation = status,
+            CaptureKind::Explanation => statuses.explanation = status,
+        }
+    }
+
+    fn next_payload_id(&self) -> u64 {
+        self.next_payload_id.fetch_add(1, Ordering::Relaxed)
+    }
+
+    fn replace_payload(&self, kind: CaptureKind, payload: QuickCapturePayload) {
+        let mut payloads = self
+            .latest_payloads
+            .lock()
+            .expect("quick capture payload lock poisoned");
+        match kind {
+            CaptureKind::Translation => payloads.translation = Some(payload),
+            CaptureKind::Explanation => payloads.explanation = Some(payload),
+        }
+    }
+
+    pub fn latest_translation_payload(&self) -> Option<QuickCapturePayload> {
+        self.latest_payload(CaptureKind::Translation)
+    }
+
+    pub fn latest_explanation_payload(&self) -> Option<QuickCapturePayload> {
+        self.latest_payload(CaptureKind::Explanation)
+    }
+
+    fn latest_payload(&self, kind: CaptureKind) -> Option<QuickCapturePayload> {
+        let payloads = self
+            .latest_payloads
+            .lock()
+            .expect("quick capture payload lock poisoned");
+        match kind {
+            CaptureKind::Translation => payloads.translation.clone(),
+            CaptureKind::Explanation => payloads.explanation.clone(),
+        }
     }
 }
 
 pub fn register(app: &mut tauri::App) -> QuickCaptureState {
-    let configured_value = load_config(app)
-        .map(|config| config.shortcut)
-        .unwrap_or_else(|_| DEFAULT_SHORTCUT.to_string());
+    let config = load_config(app).unwrap_or_else(|_| default_config());
     let plugin = tauri_plugin_global_shortcut::Builder::new()
-        .with_handler(move |app, _, event| {
-            if event.state() != ShortcutState::Pressed {
+        .with_handler(move |app, shortcut, event| {
+            // Wait until all modifier keys are released. The macOS clipboard fallback
+            // sends Command+C and can fail if the original shortcut is still held.
+            if event.state() != ShortcutState::Released {
                 return;
             }
 
             let app = app.clone();
-            std::thread::spawn(move || capture_selection(app));
+            let shortcut = shortcut.clone();
+            std::thread::spawn(move || capture_selection(app, shortcut));
         })
         .build();
 
     if let Err(error) = app.handle().plugin(plugin) {
-        return QuickCaptureState::new(unavailable_status(
-            &configured_value,
-            format!("快捷键插件初始化失败：{error}"),
-        ));
+        let message = format!("快捷键插件初始化失败：{error}");
+        return QuickCaptureState::new(
+            unavailable_status(&config.translation_shortcut, message.clone()),
+            unavailable_status(&config.explanation_shortcut, message),
+        );
     }
 
-    let status = match parse_shortcut(&configured_value) {
-        Ok(shortcut) => match app.global_shortcut().register(shortcut) {
-            Ok(()) => ready_status(&configured_value, shortcut),
-            Err(error) => unavailable_status(
-                &configured_value,
-                format!("快捷键注册失败，可能已被其他应用占用：{error}"),
-            ),
-        },
-        Err(error) => {
-            let fallback = Shortcut::from_str(DEFAULT_SHORTCUT)
-                .expect("default quick capture shortcut must be valid");
-            match app.global_shortcut().register(fallback) {
-                Ok(()) => ready_status(DEFAULT_SHORTCUT, fallback),
-                Err(register_error) => unavailable_status(
-                    DEFAULT_SHORTCUT,
-                    format!("快捷键配置无效（{error}），默认快捷键也无法注册：{register_error}"),
-                ),
-            }
-        }
+    let translation = register_configured_shortcut(
+        app.handle(),
+        &config.translation_shortcut,
+        DEFAULT_TRANSLATION_SHORTCUT,
+        CaptureKind::Translation,
+    );
+    let explanation_shortcut = parse_shortcut(&config.explanation_shortcut);
+    let translation_shortcut = parse_shortcut(&translation.shortcut_value);
+    let explanation = if explanation_shortcut.is_ok()
+        && translation_shortcut.is_ok()
+        && explanation_shortcut.as_ref().ok() == translation_shortcut.as_ref().ok()
+    {
+        unavailable_status(
+            &config.explanation_shortcut,
+            "划词理解快捷键不能与快速翻译相同".to_string(),
+        )
+    } else {
+        register_configured_shortcut(
+            app.handle(),
+            &config.explanation_shortcut,
+            DEFAULT_EXPLANATION_SHORTCUT,
+            CaptureKind::Explanation,
+        )
     };
 
-    QuickCaptureState::new(status)
+    QuickCaptureState::new(translation, explanation)
 }
 
-pub fn update_shortcut(
+pub fn update_translation_shortcut(
     app: &AppHandle,
     state: &QuickCaptureState,
     shortcut_value: String,
 ) -> Result<QuickCaptureStatus, String> {
+    update_shortcut(app, state, CaptureKind::Translation, shortcut_value)
+}
+
+pub fn update_explanation_shortcut(
+    app: &AppHandle,
+    state: &QuickCaptureState,
+    shortcut_value: String,
+) -> Result<QuickCaptureStatus, String> {
+    update_shortcut(app, state, CaptureKind::Explanation, shortcut_value)
+}
+
+fn update_shortcut(
+    app: &AppHandle,
+    state: &QuickCaptureState,
+    kind: CaptureKind,
+    shortcut_value: String,
+) -> Result<QuickCaptureStatus, String> {
     let shortcut_value = shortcut_value.trim().to_string();
     let next_shortcut = parse_shortcut(&shortcut_value)?;
-    let previous_status = state.status();
+    let previous_status = state.status(kind);
+    let other_status = state.status(match kind {
+        CaptureKind::Translation => CaptureKind::Explanation,
+        CaptureKind::Explanation => CaptureKind::Translation,
+    });
+
+    if other_status.registered
+        && parse_shortcut(&other_status.shortcut_value).is_ok_and(|value| value == next_shortcut)
+    {
+        return Err("两个功能不能使用相同的快捷键".to_string());
+    }
 
     if previous_status.registered && previous_status.shortcut_value == shortcut_value {
         return Ok(previous_status);
@@ -126,14 +255,24 @@ pub fn update_shortcut(
         return Err(format!("新快捷键注册失败，可能已被其他应用占用：{error}"));
     }
 
-    if let Err(error) = save_config(app, &shortcut_value) {
+    let config = match kind {
+        CaptureKind::Translation => QuickCaptureConfig {
+            translation_shortcut: shortcut_value.clone(),
+            explanation_shortcut: other_status.shortcut_value,
+        },
+        CaptureKind::Explanation => QuickCaptureConfig {
+            translation_shortcut: other_status.shortcut_value,
+            explanation_shortcut: shortcut_value.clone(),
+        },
+    };
+    if let Err(error) = save_config(app, &config) {
         let _ = app.global_shortcut().unregister(next_shortcut);
         restore_previous_shortcut(app, &previous_status);
         return Err(error);
     }
 
-    let status = ready_status(&shortcut_value, next_shortcut);
-    state.replace_status(status.clone());
+    let status = ready_status(&shortcut_value, next_shortcut, kind);
+    state.replace_status(kind, status.clone());
     Ok(status)
 }
 
@@ -146,29 +285,35 @@ pub fn open_translation_workbench(app: &AppHandle, text: String) -> Result<(), S
     show_window(app, "main");
     app.emit_to(
         "main",
-        CAPTURE_EVENT,
+        TRANSLATION_EVENT,
         QuickCapturePayload {
+            id: 0,
             text: Some(text),
             error: None,
             shortcut: "快速翻译窗口".to_string(),
         },
     )
     .map_err(|error| format!("无法打开完整工作台：{error}"))?;
-    hide_quick_translator(app);
+    hide_window(app, "quick-translator");
     Ok(())
 }
 
 pub fn hide_quick_translator(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("quick-translator") {
-        let _ = window.hide();
-    }
+    hide_window(app, "quick-translator");
 }
 
-fn capture_selection(app: AppHandle) {
-    let status = app.state::<QuickCaptureState>().status();
-    let selected_text = get_selected_text();
+pub fn hide_quick_explainer(app: &AppHandle) {
+    hide_window(app, "quick-explainer");
+}
+
+fn capture_selection(app: AppHandle, shortcut: Shortcut) {
+    let state = app.state::<QuickCaptureState>();
+    let kind = resolve_capture_kind(state.inner(), shortcut);
+    let status = state.status(kind);
+    let selected_text = get_selected_text_with_retry();
     let payload = if selected_text.is_empty() {
         QuickCapturePayload {
+            id: state.next_payload_id(),
             text: None,
             error: Some(
                 "没有捕获到选中文字。请先选择文本；若仍失败，请在“系统设置 → 隐私与安全性 → 辅助功能”中允许 ReadFlow。"
@@ -178,14 +323,45 @@ fn capture_selection(app: AppHandle) {
         }
     } else {
         QuickCapturePayload {
+            id: state.next_payload_id(),
             text: Some(selected_text),
             error: None,
             shortcut: status.shortcut,
         }
     };
 
-    show_window(&app, "quick-translator");
-    let _ = app.emit_to("quick-translator", CAPTURE_EVENT, payload);
+    let (window, event) = match kind {
+        CaptureKind::Translation => ("quick-translator", TRANSLATION_EVENT),
+        CaptureKind::Explanation => ("quick-explainer", EXPLANATION_EVENT),
+    };
+    state.replace_payload(kind, payload.clone());
+    show_window(&app, window);
+    // A hidden macOS WebView may resume after the native window is already visible.
+    // Give its event loop a brief chance to wake up; the frontend also pulls the
+    // cached payload again whenever the window gains focus.
+    std::thread::sleep(Duration::from_millis(120));
+    let _ = app.emit_to(window, event, payload);
+}
+
+fn get_selected_text_with_retry() -> String {
+    let selected_text = get_selected_text();
+    if !selected_text.is_empty() {
+        return selected_text;
+    }
+
+    std::thread::sleep(Duration::from_millis(80));
+    get_selected_text()
+}
+
+fn resolve_capture_kind(state: &QuickCaptureState, shortcut: Shortcut) -> CaptureKind {
+    let explanation = state.explanation_status();
+    if explanation.registered
+        && parse_shortcut(&explanation.shortcut_value).is_ok_and(|value| value == shortcut)
+    {
+        CaptureKind::Explanation
+    } else {
+        CaptureKind::Translation
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -207,6 +383,12 @@ fn show_window(app: &AppHandle, label: &str) {
     }
 }
 
+fn hide_window(app: &AppHandle, label: &str) {
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.hide();
+    }
+}
+
 fn parse_shortcut(value: &str) -> Result<Shortcut, String> {
     let shortcut =
         Shortcut::from_str(value).map_err(|error| format!("快捷键格式无法识别：{error}"))?;
@@ -217,12 +399,47 @@ fn parse_shortcut(value: &str) -> Result<Shortcut, String> {
     Ok(shortcut)
 }
 
-fn ready_status(value: &str, shortcut: Shortcut) -> QuickCaptureStatus {
+fn register_configured_shortcut(
+    app: &AppHandle,
+    configured_value: &str,
+    default_value: &str,
+    kind: CaptureKind,
+) -> QuickCaptureStatus {
+    match parse_shortcut(configured_value) {
+        Ok(shortcut) => match app.global_shortcut().register(shortcut) {
+            Ok(()) => ready_status(configured_value, shortcut, kind),
+            Err(error) => unavailable_status(
+                configured_value,
+                format!("快捷键注册失败，可能已被其他应用占用：{error}"),
+            ),
+        },
+        Err(error) => {
+            let fallback = Shortcut::from_str(default_value)
+                .expect("default quick capture shortcut must be valid");
+            match app.global_shortcut().register(fallback) {
+                Ok(()) => ready_status(default_value, fallback, kind),
+                Err(register_error) => unavailable_status(
+                    default_value,
+                    format!("快捷键配置无效（{error}），默认快捷键也无法注册：{register_error}"),
+                ),
+            }
+        }
+    }
+}
+
+fn ready_status(value: &str, shortcut: Shortcut, kind: CaptureKind) -> QuickCaptureStatus {
     QuickCaptureStatus {
         registered: true,
         shortcut: format_shortcut(shortcut),
         shortcut_value: value.to_string(),
-        message: "在任意应用选中文字后按快捷键，直接打开中英互译小窗口".to_string(),
+        message: match kind {
+            CaptureKind::Translation => {
+                "在任意应用选中文字后按快捷键，打开中英互译小窗口".to_string()
+            }
+            CaptureKind::Explanation => {
+                "在任意应用选中文字后按快捷键，打开中文划词解读窗口".to_string()
+            }
+        },
     }
 }
 
@@ -266,22 +483,41 @@ fn config_path(app: &impl Manager<tauri::Wry>) -> Result<PathBuf, String> {
         .map_err(|error| format!("无法定位快捷键配置目录：{error}"))
 }
 
+fn default_config() -> QuickCaptureConfig {
+    QuickCaptureConfig {
+        translation_shortcut: DEFAULT_TRANSLATION_SHORTCUT.to_string(),
+        explanation_shortcut: DEFAULT_EXPLANATION_SHORTCUT.to_string(),
+    }
+}
+
 fn load_config(app: &impl Manager<tauri::Wry>) -> Result<QuickCaptureConfig, String> {
     let path = config_path(app)?;
     let content = fs::read_to_string(&path)
         .map_err(|error| format!("无法读取快捷键配置 {}：{error}", path.display()))?;
-    serde_json::from_str(&content).map_err(|error| format!("快捷键配置格式错误：{error}"))
+    parse_config(&content)
 }
 
-fn save_config(app: &impl Manager<tauri::Wry>, shortcut: &str) -> Result<(), String> {
+fn parse_config(content: &str) -> Result<QuickCaptureConfig, String> {
+    let file: QuickCaptureConfigFile =
+        serde_json::from_str(content).map_err(|error| format!("快捷键配置格式错误：{error}"))?;
+    Ok(QuickCaptureConfig {
+        translation_shortcut: file
+            .translation_shortcut
+            .or(file.shortcut)
+            .unwrap_or_else(|| DEFAULT_TRANSLATION_SHORTCUT.to_string()),
+        explanation_shortcut: file
+            .explanation_shortcut
+            .unwrap_or_else(|| DEFAULT_EXPLANATION_SHORTCUT.to_string()),
+    })
+}
+
+fn save_config(app: &impl Manager<tauri::Wry>, config: &QuickCaptureConfig) -> Result<(), String> {
     let path = config_path(app)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| format!("无法创建配置目录：{error}"))?;
     }
-    let content = serde_json::to_string_pretty(&QuickCaptureConfig {
-        shortcut: shortcut.to_string(),
-    })
-    .map_err(|error| format!("无法序列化快捷键配置：{error}"))?;
+    let content = serde_json::to_string_pretty(config)
+        .map_err(|error| format!("无法序列化快捷键配置：{error}"))?;
     fs::write(path, content).map_err(|error| format!("无法保存快捷键配置：{error}"))
 }
 
@@ -306,5 +542,12 @@ mod tests {
     fn formats_macos_shortcut_label() {
         let shortcut = Shortcut::from_str("Command+Shift+Space").unwrap();
         assert_eq!(format_shortcut(shortcut), "⌘⇧Space");
+    }
+
+    #[test]
+    fn migrates_legacy_translation_shortcut() {
+        let config = parse_config(r#"{"shortcut":"Command+Shift+KeyT"}"#).unwrap();
+        assert_eq!(config.translation_shortcut, "Command+Shift+KeyT");
+        assert_eq!(config.explanation_shortcut, DEFAULT_EXPLANATION_SHORTCUT);
     }
 }

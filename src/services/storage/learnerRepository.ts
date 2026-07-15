@@ -57,14 +57,15 @@ export function saveActiveLearnerId(learnerId: string): void {
   window.localStorage.setItem(ACTIVE_LEARNER_KEY, learnerId);
 }
 
-export function createLearner(name: string): Learner {
+export function createLearner(name: string, goal?: string): Learner {
   const trimmedName = name.trim();
+  const trimmedGoal = goal?.trim();
   const now = new Date().toISOString();
   return {
     id: crypto.randomUUID(),
     name: trimmedName,
     avatar: trimmedName.slice(0, 1) || "学",
-    goals: [],
+    goals: trimmedGoal ? [trimmedGoal] : [],
     interests: [],
     createdAt: now,
     updatedAt: now,

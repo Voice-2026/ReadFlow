@@ -34,6 +34,20 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": true
+      },
+      {
+        "label": "quick-explainer",
+        "title": "ReadFlow 划词理解",
+        "url": "index.html?window=quick-explainer",
+        "width": 1300,
+        "height": 1000,
+        "minWidth": 1000,
+        "minHeight": 720,
+        "center": true,
+        "visible": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": true
       }
     ],
     "security": {

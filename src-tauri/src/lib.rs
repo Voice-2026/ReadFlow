@@ -50,7 +50,28 @@ async fn test_ai_configuration(
 fn get_quick_capture_status(
     status: tauri::State<'_, quick_capture::QuickCaptureState>,
 ) -> quick_capture::QuickCaptureStatus {
-    status.status()
+    status.translation_status()
+}
+
+#[tauri::command]
+fn get_quick_explanation_status(
+    status: tauri::State<'_, quick_capture::QuickCaptureState>,
+) -> quick_capture::QuickCaptureStatus {
+    status.explanation_status()
+}
+
+#[tauri::command]
+fn get_latest_quick_translation_payload(
+    status: tauri::State<'_, quick_capture::QuickCaptureState>,
+) -> Option<quick_capture::QuickCapturePayload> {
+    status.latest_translation_payload()
+}
+
+#[tauri::command]
+fn get_latest_quick_explanation_payload(
+    status: tauri::State<'_, quick_capture::QuickCaptureState>,
+) -> Option<quick_capture::QuickCapturePayload> {
+    status.latest_explanation_payload()
 }
 
 #[tauri::command]
@@ -59,7 +80,16 @@ fn update_quick_capture_shortcut(
     status: tauri::State<'_, quick_capture::QuickCaptureState>,
     shortcut: String,
 ) -> Result<quick_capture::QuickCaptureStatus, String> {
-    quick_capture::update_shortcut(&app, status.inner(), shortcut)
+    quick_capture::update_translation_shortcut(&app, status.inner(), shortcut)
+}
+
+#[tauri::command]
+fn update_quick_explanation_shortcut(
+    app: tauri::AppHandle,
+    status: tauri::State<'_, quick_capture::QuickCaptureState>,
+    shortcut: String,
+) -> Result<quick_capture::QuickCaptureStatus, String> {
+    quick_capture::update_explanation_shortcut(&app, status.inner(), shortcut)
 }
 
 #[tauri::command]
@@ -72,9 +102,14 @@ fn hide_quick_translator(app: tauri::AppHandle) {
     quick_capture::hide_quick_translator(&app);
 }
 
+#[tauri::command]
+fn hide_quick_explainer(app: tauri::AppHandle) {
+    quick_capture::hide_quick_explainer(&app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let quick_capture_status = quick_capture::register(app);
@@ -88,18 +123,32 @@ pub fn run() {
             clear_ai_api_key,
             test_ai_configuration,
             get_quick_capture_status,
+            get_quick_explanation_status,
+            get_latest_quick_translation_payload,
+            get_latest_quick_explanation_payload,
             update_quick_capture_shortcut,
+            update_quick_explanation_shortcut,
             open_translation_workbench,
-            hide_quick_translator
+            hide_quick_translator,
+            hide_quick_explainer
         ])
         .on_window_event(|window, event| {
-            if window.label() == "quick-translator" {
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("failed to run ReadFlow");
+        .build(tauri::generate_context!())
+        .expect("failed to build ReadFlow");
+
+    app.run(|app_handle, event| {
+        #[cfg(target_os = "macos")]
+        if matches!(event, tauri::RunEvent::Reopen { .. }) {
+            if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }
+    });
 }

@@ -29,8 +29,8 @@ export function useLearners() {
     setActiveLearnerId(learnerId);
   }
 
-  function addLearner(name: string) {
-    const learner = createLearner(name);
+  function addLearner(name: string, goal?: string) {
+    const learner = createLearner(name, goal);
     const nextLearners = [...learners, learner];
     saveLearners(nextLearners);
     saveActiveLearnerId(learner.id);
