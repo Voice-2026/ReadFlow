@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ReadFlow",
+  "version": "0.1.0",
+  "identifier": "com.fanpeng.readflow",
+  "build": {
+    "beforeDevCommand": "npm run dev:desktop",
+    "devUrl": "http://localhost:1426",
+    "beforeBuildCommand": "npm run build:desktop",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "ReadFlow - AI 英语工作台",
+        "width": 1360,
+        "height": 900,
+        "minWidth": 1080,
+        "minHeight": 720,
+        "center": true,
+        "resizable": true
+      },
+      {
+        "label": "quick-translator",
+        "title": "ReadFlow 快速翻译",
+        "url": "index.html?window=quick-translator",
+        "width": 580,
+        "height": 560,
+        "minWidth": 460,
+        "minHeight": 420,
+        "center": true,
+        "visible": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all",
+    "externalBin": ["binaries/readflow-ai-runtime"],
+    "icon": ["icons/icon.png"]
+  }
+}

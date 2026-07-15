@@ -1,0 +1,412 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  clearAiApiKey,
+  getAiConfigurationStatus,
+  saveAiConfiguration,
+  testAiConfiguration,
+  type AiProvider,
+  type AiConfigurationStatus,
+} from "../../services/ai/aiGateway";
+import {
+  updateQuickCaptureShortcut,
+  type QuickCaptureStatus,
+} from "../../services/desktop/quickCapture";
+
+type SettingsWorkspaceProps = {
+  aiStatus: AiConfigurationStatus;
+  onAiStatusChange: (status: AiConfigurationStatus) => void;
+  quickCaptureStatus: QuickCaptureStatus;
+  onQuickCaptureStatusChange: (status: QuickCaptureStatus) => void;
+};
+
+const modifierCodes = new Set([
+  "MetaLeft",
+  "MetaRight",
+  "ControlLeft",
+  "ControlRight",
+  "AltLeft",
+  "AltRight",
+  "ShiftLeft",
+  "ShiftRight",
+]);
+
+const aiProviders: Array<{
+  id: AiProvider;
+  label: string;
+  baseUrl: string;
+  model: string;
+}> = [
+  {
+    id: "openai-compatible",
+    label: "OpenAI Compatible",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4.1-mini",
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4.1-mini",
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    baseUrl: "https://api.anthropic.com",
+    model: "claude-sonnet-4-5",
+  },
+  {
+    id: "google",
+    label: "Google Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    model: "gemini-2.5-flash",
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    model: "openai/gpt-4.1-mini",
+  },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-v4-flash",
+  },
+];
+
+export function SettingsWorkspace({
+  aiStatus,
+  onAiStatusChange,
+  quickCaptureStatus,
+  onQuickCaptureStatusChange,
+}: SettingsWorkspaceProps) {
+  const [recording, setRecording] = useState(false);
+  const [pendingShortcut, setPendingShortcut] = useState(quickCaptureStatus.shortcutValue);
+  const [message, setMessage] = useState(quickCaptureStatus.message);
+  const [saving, setSaving] = useState(false);
+  const recorderRef = useRef<HTMLButtonElement>(null);
+  const [provider, setProvider] = useState<AiProvider>(aiStatus.provider);
+  const [baseUrl, setBaseUrl] = useState(aiStatus.baseUrl);
+  const [model, setModel] = useState(aiStatus.model ?? "");
+  const [apiKey, setApiKey] = useState("");
+  const [hasApiKey, setHasApiKey] = useState(aiStatus.hasApiKey);
+  const [aiMessage, setAiMessage] = useState(aiStatus.message);
+  const [savingAi, setSavingAi] = useState(false);
+  const [testingAi, setTestingAi] = useState(false);
+  const [loadingProvider, setLoadingProvider] = useState(false);
+  const [clearingApiKey, setClearingApiKey] = useState(false);
+
+  useEffect(() => {
+    setPendingShortcut(quickCaptureStatus.shortcutValue);
+    setMessage(quickCaptureStatus.message);
+  }, [quickCaptureStatus]);
+
+  useEffect(() => {
+    setProvider(aiStatus.provider);
+    setBaseUrl(aiStatus.baseUrl);
+    setModel(aiStatus.model ?? "");
+    setHasApiKey(aiStatus.hasApiKey);
+    setAiMessage(aiStatus.message);
+  }, [aiStatus]);
+
+  function beginRecording() {
+    setRecording(true);
+    setMessage("请按下新的快捷键组合，Esc 取消");
+    requestAnimationFrame(() => recorderRef.current?.focus());
+  }
+
+  function captureShortcut(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (!recording) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.code === "Escape") {
+      setRecording(false);
+      setMessage("已取消录制");
+      return;
+    }
+    if (modifierCodes.has(event.code)) {
+      setMessage("继续按下一个字母、数字或功能键");
+      return;
+    }
+
+    try {
+      const shortcut = shortcutFromEvent(event);
+      setPendingShortcut(shortcut);
+      setRecording(false);
+      setMessage("新组合已录制，保存后立即生效");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "无法识别这个快捷键");
+    }
+  }
+
+  async function saveShortcut() {
+    setSaving(true);
+    try {
+      const status = await updateQuickCaptureShortcut(pendingShortcut);
+      onQuickCaptureStatusChange(status);
+      setMessage("快捷键已保存并立即生效");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "保存快捷键失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveAi() {
+    setSavingAi(true);
+    try {
+      const status = await saveAiConfiguration({ provider, baseUrl, model, apiKey });
+      onAiStatusChange(status);
+      setHasApiKey(status.hasApiKey);
+      setApiKey("");
+      setAiMessage(
+        apiKey.trim()
+          ? "配置已保存，新的 API Key 已写入 macOS 钥匙串"
+          : "Provider、Base URL 和模型配置已保存",
+      );
+    } catch (error) {
+      setAiMessage(error instanceof Error ? error.message : "保存 AI 配置失败");
+    } finally {
+      setSavingAi(false);
+    }
+  }
+
+  async function testAi() {
+    setTestingAi(true);
+    try {
+      setAiMessage(await testAiConfiguration(provider));
+    } catch (error) {
+      setAiMessage(error instanceof Error ? error.message : "AI 连接测试失败");
+    } finally {
+      setTestingAi(false);
+    }
+  }
+
+  async function changeProvider(nextProvider: AiProvider) {
+    const fallback = aiProviders.find((item) => item.id === nextProvider);
+    if (!fallback) return;
+
+    setProvider(nextProvider);
+    setApiKey("");
+    setLoadingProvider(true);
+    try {
+      const status = await getAiConfigurationStatus(nextProvider);
+      setBaseUrl(status.baseUrl);
+      setModel(status.model ?? fallback.model);
+      setHasApiKey(status.hasApiKey);
+      setAiMessage(status.message);
+    } catch (error) {
+      setBaseUrl(fallback.baseUrl);
+      setModel(fallback.model);
+      setHasApiKey(false);
+      setAiMessage(error instanceof Error ? error.message : "读取 Provider 配置失败");
+    } finally {
+      setLoadingProvider(false);
+    }
+  }
+
+  async function clearSavedApiKey() {
+    if (!window.confirm(`确认清除 ${providerLabel(provider)} 的 API Key？`)) return;
+    setClearingApiKey(true);
+    try {
+      const status = await clearAiApiKey(provider);
+      setHasApiKey(status.hasApiKey);
+      setApiKey("");
+      setAiMessage("API Key 已从 macOS 钥匙串清除");
+      if (aiStatus.provider === provider) onAiStatusChange(status);
+    } catch (error) {
+      setAiMessage(error instanceof Error ? error.message : "清除 API Key 失败");
+    } finally {
+      setClearingApiKey(false);
+    }
+  }
+
+  return (
+    <section className="workspace settings-workspace">
+      <header className="workspace-header">
+        <div>
+          <span className="eyebrow">Device Settings</span>
+          <h1>设置</h1>
+          <p>这些设置只保存在本机，对所有学习者共用。</p>
+        </div>
+      </header>
+
+      <article className="settings-card">
+        <div>
+          <span className="settings-label">快速翻译快捷键</span>
+          <h2>在其他应用中唤起中英互译小窗口</h2>
+          <p>至少包含 Command、Control 或 Option 中的一项，避免普通按键影响日常输入。</p>
+        </div>
+
+        <div className="shortcut-configurator">
+          <div className="shortcut-current">
+            <span>当前组合</span>
+            <kbd>{formatShortcutValue(pendingShortcut)}</kbd>
+          </div>
+          <button
+            ref={recorderRef}
+            className={`shortcut-recorder ${recording ? "recording" : ""}`}
+            onClick={beginRecording}
+            onKeyDown={captureShortcut}
+          >
+            {recording ? "正在录制，请按组合键…" : "录制新快捷键"}
+          </button>
+          <button
+            className="primary-button"
+            disabled={saving || pendingShortcut === quickCaptureStatus.shortcutValue}
+            onClick={() => void saveShortcut()}
+          >
+            {saving ? "正在保存…" : "保存并启用"}
+          </button>
+        </div>
+
+        <div className={`settings-message ${quickCaptureStatus.registered ? "ready" : "error"}`}>
+          {message}
+        </div>
+      </article>
+
+      <article className="settings-card ai-settings-card">
+        <div>
+          <span className="settings-label">Pi AI Runtime</span>
+          <h2>统一配置多个模型服务</h2>
+          <p>Base URL 和模型名称保存在本机配置文件；API Key 只保存在 macOS 钥匙串。</p>
+        </div>
+
+        <div className="ai-settings-form">
+          <label>
+            Provider
+            <select
+              value={provider}
+              disabled={loadingProvider}
+              onChange={(event) => void changeProvider(event.target.value as AiProvider)}
+            >
+              {aiProviders.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Base URL
+            <input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
+          </label>
+          <label>
+            模型名称
+            <input
+              value={model}
+              onChange={(event) => setModel(event.target.value)}
+              placeholder="输入 Provider 支持的模型 ID"
+            />
+          </label>
+          <label>
+            API Key
+            <div className="ai-key-control">
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(event) => setApiKey(event.target.value)}
+                placeholder={hasApiKey ? "••••••••••••（已保存）" : "输入 API Key"}
+                autoComplete="off"
+              />
+              {hasApiKey && (
+                <button
+                  type="button"
+                  className="ai-key-clear"
+                  disabled={clearingApiKey}
+                  onClick={() => void clearSavedApiKey()}
+                >
+                  {clearingApiKey ? "清除中" : "清除"}
+                </button>
+              )}
+            </div>
+            <small>
+              {hasApiKey ? "输入新 Key 并保存即可替换，原 Key 不会回显" : "密钥将保存到系统钥匙串"}
+            </small>
+          </label>
+        </div>
+
+        <div className="ai-settings-actions">
+          <span className={`settings-message ${hasApiKey ? "ready" : "error"}`}>
+            {aiMessage}
+          </span>
+          <button
+            className="secondary-button"
+            disabled={testingAi || !hasApiKey || loadingProvider}
+            onClick={() => void testAi()}
+          >
+            {testingAi ? "测试中…" : "测试连接"}
+          </button>
+          <button className="primary-button" disabled={savingAi} onClick={() => void saveAi()}>
+            {savingAi ? "保存中…" : "保存 AI 配置"}
+          </button>
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function shortcutFromEvent(event: React.KeyboardEvent): string {
+  const modifiers: string[] = [];
+  if (event.metaKey) modifiers.push("Command");
+  if (event.ctrlKey) modifiers.push("Control");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.shiftKey) modifiers.push("Shift");
+
+  if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+    throw new Error("请至少按住 Command、Control 或 Option 中的一项");
+  }
+
+  const code = normalizeKeyCode(event.code);
+  return [...modifiers, code].join("+");
+}
+
+function providerLabel(provider: AiProvider): string {
+  return aiProviders.find((item) => item.id === provider)?.label ?? provider;
+}
+
+function normalizeKeyCode(code: string): string {
+  if (code.startsWith("Key") || code.startsWith("Digit") || code.startsWith("F")) {
+    return code;
+  }
+
+  const supported = new Set([
+    "Space",
+    "Enter",
+    "Tab",
+    "Backquote",
+    "Backslash",
+    "BracketLeft",
+    "BracketRight",
+    "Comma",
+    "Equal",
+    "Minus",
+    "Period",
+    "Quote",
+    "Semicolon",
+    "Slash",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+  ]);
+  if (!supported.has(code)) {
+    throw new Error("暂不支持这个按键，请使用字母、数字、空格或常见符号键");
+  }
+  return code;
+}
+
+function formatShortcutValue(value: string): string {
+  return value
+    .split("+")
+    .map((part) => {
+      const normalized = part.toLowerCase();
+      if (["command", "cmd", "super", "commandorcontrol"].includes(normalized)) return "⌘";
+      if (["control", "ctrl"].includes(normalized)) return "⌃";
+      if (["alt", "option"].includes(normalized)) return "⌥";
+      if (normalized === "shift") return "⇧";
+      return part.replace(/^Key/, "").replace(/^Digit/, "");
+    })
+    .join("");
+}

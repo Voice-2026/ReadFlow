@@ -1,0 +1,24 @@
+[package]
+name = "readflow"
+version = "0.1.0"
+description = "ReadFlow AI English learning workbench"
+authors = ["fanpeng"]
+edition = "2021"
+
+[lib]
+name = "readflow_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-shell = "2"
+keyring = "4.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+selection = "1.2"
