@@ -1,5 +1,6 @@
 mod ai;
 mod quick_capture;
+mod selection_capture;
 
 use tauri::Manager;
 

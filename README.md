@@ -8,9 +8,9 @@ ReadFlow 是一个 AI 原生、本地优先的 macOS 英语学习工作台。它
 
 前往 [GitHub Releases](https://github.com/Voice-2026/ReadFlow/releases) 下载最新的 macOS 安装包。
 
-当前最新版本为 `v0.1.1`，提供 Apple Silicon 版本，适用于 M1、M2、M3、M4 及后续 Apple 芯片 Mac：
+当前最新版本为 `v0.1.2`，提供 Apple Silicon 版本，适用于 M1、M2、M3、M4 及后续 Apple 芯片 Mac：
 
-1. 下载 `ReadFlow_0.1.1_aarch64.dmg`；
+1. 下载 `ReadFlow_0.1.2_aarch64.dmg`；
 2. 打开 DMG，将 ReadFlow 拖入“应用程序”；
 3. 首次启动后，在应用设置中配置自己的模型 API Key；
 4. 按照下方说明授予辅助功能权限，才能从其他应用捕获选中文字。
@@ -171,6 +171,8 @@ npm run tauri dev
 ```
 
 ReadFlow 会先尝试读取当前选区；兼容路径会短暂使用剪贴板，并在读取后恢复原内容。关闭主窗口或快捷窗口时应用会隐藏到后台，全局快捷键仍可继续唤起窗口。
+
+当前安装包尚未正式签名，升级后如果辅助功能开关已经开启但仍无法捕获，请完全退出 ReadFlow，在辅助功能列表中删除旧的 ReadFlow 条目，重新添加 `/Applications/ReadFlow.app`、打开开关并重启应用。
 
 ## 联网与安全边界
 

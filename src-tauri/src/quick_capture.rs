@@ -310,24 +310,19 @@ fn capture_selection(app: AppHandle, shortcut: Shortcut) {
     let state = app.state::<QuickCaptureState>();
     let kind = resolve_capture_kind(state.inner(), shortcut);
     let status = state.status(kind);
-    let selected_text = get_selected_text_with_retry();
-    let payload = if selected_text.is_empty() {
-        QuickCapturePayload {
-            id: state.next_payload_id(),
-            text: None,
-            error: Some(
-                "没有捕获到选中文字。请先选择文本；若仍失败，请在“系统设置 → 隐私与安全性 → 辅助功能”中允许 ReadFlow。"
-                    .to_string(),
-            ),
-            shortcut: status.shortcut,
-        }
-    } else {
-        QuickCapturePayload {
+    let payload = match crate::selection_capture::capture_selected_text() {
+        Ok(selected_text) => QuickCapturePayload {
             id: state.next_payload_id(),
             text: Some(selected_text),
             error: None,
             shortcut: status.shortcut,
-        }
+        },
+        Err(error) => QuickCapturePayload {
+            id: state.next_payload_id(),
+            text: None,
+            error: Some(error.user_message()),
+            shortcut: status.shortcut,
+        },
     };
 
     let (window, event) = match kind {
@@ -343,16 +338,6 @@ fn capture_selection(app: AppHandle, shortcut: Shortcut) {
     let _ = app.emit_to(window, event, payload);
 }
 
-fn get_selected_text_with_retry() -> String {
-    let selected_text = get_selected_text();
-    if !selected_text.is_empty() {
-        return selected_text;
-    }
-
-    std::thread::sleep(Duration::from_millis(80));
-    get_selected_text()
-}
-
 fn resolve_capture_kind(state: &QuickCaptureState, shortcut: Shortcut) -> CaptureKind {
     let explanation = state.explanation_status();
     if explanation.registered
@@ -362,16 +347,6 @@ fn resolve_capture_kind(state: &QuickCaptureState, shortcut: Shortcut) -> Captur
     } else {
         CaptureKind::Translation
     }
-}
-
-#[cfg(target_os = "macos")]
-fn get_selected_text() -> String {
-    selection::get_text().trim().to_string()
-}
-
-#[cfg(not(target_os = "macos"))]
-fn get_selected_text() -> String {
-    String::new()
 }
 
 fn show_window(app: &AppHandle, label: &str) {

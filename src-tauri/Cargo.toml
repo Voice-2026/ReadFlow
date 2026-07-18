@@ -1,6 +1,6 @@
 [package]
 name = "readflow"
-version = "0.1.1"
+version = "0.1.2"
 description = "ReadFlow AI English learning workbench"
 authors = ["fanpeng"]
 edition = "2021"
@@ -21,4 +21,8 @@ tauri-plugin-shell = "2"
 keyring = "4.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-selection = "1.2"
+accessibility-ng = "0.1.6"
+accessibility-sys-ng = "0.1.3"
+arboard = { version = "3.6", features = ["image-data"] }
+core-foundation = "0.9.4"
+enigo = "0.2.1"
