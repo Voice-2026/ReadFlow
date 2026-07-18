@@ -23,6 +23,7 @@ import type {
   QuickExplanationHistoryRecord,
   QuickExplanationResult,
 } from "../../shared/types";
+import { AccessibilityPermissionHelp } from "../../shared/AccessibilityPermissionHelp";
 import { WindowPinButton } from "../../shared/WindowPinButton";
 
 export function QuickExplainerApp() {
@@ -358,7 +359,10 @@ export function QuickExplainerApp() {
             </div>
             <div className="quick-explanation-scroll">
               {!result ? (
-                <div className="quick-explanation-empty">{message}</div>
+                <div className="quick-explanation-empty">
+                  {message}
+                  <AccessibilityPermissionHelp message={message} />
+                </div>
               ) : (
                 <ExplanationContent result={result} />
               )}
@@ -366,7 +370,13 @@ export function QuickExplainerApp() {
           </section>
 
           <footer className="quick-translator-footer quick-explainer-footer">
-            <small>{result ? `${languageLabel(result.sourceLanguage)} · ${message}` : message}</small>
+            <small>
+              {result
+                ? `${languageLabel(result.sourceLanguage)} · ${message}`
+                : message.includes("辅助功能权限")
+                  ? "完成授权后，回到 ReadFlow 再按快捷键"
+                  : message}
+            </small>
             <button
               className="primary-button"
               disabled={loading || !source.trim()}

@@ -5,6 +5,21 @@ mod selection_capture;
 use tauri::Manager;
 
 #[tauri::command]
+fn open_accessibility_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+            .spawn()
+            .map_err(|error| format!("无法打开辅助功能设置：{error}"))?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    Err("辅助功能设置跳转仅支持 macOS".to_string())
+}
+
+#[tauri::command]
 fn get_ai_configuration_status(
     app: tauri::AppHandle,
     provider: Option<String>,
@@ -131,7 +146,8 @@ pub fn run() {
             update_quick_explanation_shortcut,
             open_translation_workbench,
             hide_quick_translator,
-            hide_quick_explainer
+            hide_quick_explainer,
+            open_accessibility_settings
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

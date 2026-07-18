@@ -21,6 +21,7 @@ import type {
   QuickTranslationHistoryRecord,
   QuickTranslationResult,
 } from "../../shared/types";
+import { AccessibilityPermissionHelp } from "../../shared/AccessibilityPermissionHelp";
 import { WindowPinButton } from "../../shared/WindowPinButton";
 
 export function QuickTranslatorApp() {
@@ -288,6 +289,7 @@ export function QuickTranslatorApp() {
         </div>
         <div className={`quick-result-content ${result ? "has-result" : ""}`}>
           {result?.translation ?? message}
+          <AccessibilityPermissionHelp message={message} />
         </div>
       </section>
 
