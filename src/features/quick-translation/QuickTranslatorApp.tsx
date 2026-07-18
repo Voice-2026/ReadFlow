@@ -21,6 +21,7 @@ import type {
   QuickTranslationHistoryRecord,
   QuickTranslationResult,
 } from "../../shared/types";
+import { WindowPinButton } from "../../shared/WindowPinButton";
 
 export function QuickTranslatorApp() {
   const [initialState] = useState(() => {
@@ -197,16 +198,25 @@ export function QuickTranslatorApp() {
   return (
     <main className="quick-translator-shell">
       <header className="quick-translator-header">
-        <div>
+        <div className="quick-window-title">
           <span className="quick-logo">R</span>
           <div>
             <strong>ReadFlow 快速翻译</strong>
             <small>自动识别中文或英文</small>
           </div>
         </div>
-        <button aria-label="关闭快速翻译" onClick={() => void hideQuickTranslator()}>
-          ×
-        </button>
+        <div className="quick-window-actions">
+          <WindowPinButton onStatusChange={setMessage} />
+          <button
+            type="button"
+            className="quick-window-action quick-window-close"
+            aria-label="关闭快速翻译"
+            title="关闭"
+            onClick={() => void hideQuickTranslator()}
+          >
+            ×
+          </button>
+        </div>
       </header>
 
       <section className="quick-translation-history">

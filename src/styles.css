@@ -833,7 +833,8 @@ input[type="file"] {
 }
 
 .quick-translator-header,
-.quick-translator-header > div,
+.quick-window-title,
+.quick-window-actions,
 .quick-translator-footer,
 .quick-panel-heading,
 .quick-direction-row {
@@ -845,14 +846,18 @@ input[type="file"] {
   justify-content: space-between;
 }
 
-.quick-translator-header > div {
+.quick-window-title {
   gap: 10px;
 }
 
-.quick-translator-header > div > div {
+.quick-window-title > div {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.quick-window-actions {
+  gap: 4px;
 }
 
 .quick-translator-header small {
@@ -873,19 +878,34 @@ input[type="file"] {
   font-weight: 800;
 }
 
-.quick-translator-header > button {
+.quick-window-action {
+  display: grid;
+  place-items: center;
   width: 30px;
   height: 30px;
   color: #706a5f;
   border: 0;
   border-radius: 9px;
   background: transparent;
-  font-size: 24px;
   line-height: 1;
 }
 
-.quick-translator-header > button:hover {
+.quick-window-action:hover:not(:disabled) {
   background: #e9e2d3;
+}
+
+.quick-window-action:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.quick-window-pin.active {
+  color: #4b3a17;
+  background: #f1c977;
+}
+
+.quick-window-close {
+  font-size: 24px;
 }
 
 .quick-translation-history {

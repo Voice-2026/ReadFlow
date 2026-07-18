@@ -505,8 +505,7 @@ async fn request_json_with_options(
         .content
         .filter(|content| !content.trim().is_empty())
         .ok_or_else(|| "Pi Runtime 没有返回内容".to_string())?;
-    let mut result: Value = serde_json::from_str(strip_json_fence(&content))
-        .map_err(|error| format!("AI 返回结果不是合法 JSON：{error}"))?;
+    let mut result = parse_json_content(&content)?;
     if let Some(object) = result.as_object_mut() {
         object.insert("sources".to_string(), Value::Array(response.sources));
         object.insert(
@@ -613,6 +612,30 @@ fn strip_json_fence(content: &str) -> &str {
         .strip_suffix("```")
         .unwrap_or(without_opening)
         .trim()
+}
+
+fn parse_json_content(content: &str) -> Result<Value, String> {
+    let normalized = strip_json_fence(content);
+    match serde_json::from_str::<Value>(normalized) {
+        Ok(value) if value.is_object() => return Ok(value),
+        Ok(_) => return Err("AI 返回结果不是 JSON 对象".to_string()),
+        Err(direct_error) => {
+            for (offset, character) in normalized.char_indices() {
+                if character != '{' {
+                    continue;
+                }
+
+                let mut deserializer = serde_json::Deserializer::from_str(&normalized[offset..]);
+                if let Ok(value) = Value::deserialize(&mut deserializer) {
+                    if value.is_object() {
+                        return Ok(value);
+                    }
+                }
+            }
+
+            Err(format!("AI 返回结果不是合法 JSON 对象：{direct_error}"))
+        }
+    }
 }
 
 fn validate_base_url(value: &str) -> Result<String, String> {
@@ -754,6 +777,35 @@ mod tests {
     }
 
     #[test]
+    fn parses_plain_and_fenced_json_content() {
+        assert_eq!(parse_json_content(r#"{"ok":true}"#).unwrap(), json!({"ok": true}));
+        assert_eq!(
+            parse_json_content("```json\n{\"ok\":true}\n```").unwrap(),
+            json!({"ok": true})
+        );
+    }
+
+    #[test]
+    fn extracts_json_object_from_model_explanation() {
+        let content = "已按要求生成结果：\n{\"translation\":\"译文\",\"summary\":\"主旨\"}\n以上为翻译结果。";
+        assert_eq!(
+            parse_json_content(content).unwrap(),
+            json!({"translation": "译文", "summary": "主旨"})
+        );
+    }
+
+    #[test]
+    fn skips_invalid_braces_before_json_object() {
+        let content = "说明 {not-json}\n{\"ok\":true}\n完成";
+        assert_eq!(parse_json_content(content).unwrap(), json!({"ok": true}));
+    }
+
+    #[test]
+    fn rejects_content_without_json_object() {
+        assert!(parse_json_content("抱歉，无法生成翻译结果。").is_err());
+    }
+
+    #[test]
     fn validates_required_translation_fields() {
         let result = json!({
             "translation": "译文",
@@ -763,6 +815,17 @@ mod tests {
             "vocabulary": []
         });
         assert!(validate_translation_result(&result).is_ok());
+    }
+
+    #[test]
+    fn rejects_translation_result_with_missing_fields() {
+        let result = json!({
+            "translation": "译文",
+            "sentences": [],
+            "expressions": [],
+            "vocabulary": []
+        });
+        assert!(validate_translation_result(&result).is_err());
     }
 
     #[test]

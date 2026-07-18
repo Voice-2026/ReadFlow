@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "quick-windows",
+  "description": "ReadFlow quick window pin controls",
+  "windows": ["quick-translator", "quick-explainer"],
+  "permissions": ["core:window:allow-set-always-on-top"]
+}

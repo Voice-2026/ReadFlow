@@ -23,6 +23,7 @@ import type {
   QuickExplanationHistoryRecord,
   QuickExplanationResult,
 } from "../../shared/types";
+import { WindowPinButton } from "../../shared/WindowPinButton";
 
 export function QuickExplainerApp() {
   const [initialState] = useState(() => {
@@ -271,16 +272,25 @@ export function QuickExplainerApp() {
   return (
     <main className="quick-explainer-shell">
       <header className="quick-translator-header quick-explainer-header">
-        <div>
+        <div className="quick-window-title">
           <span className="quick-logo">R</span>
           <div>
             <strong>ReadFlow 划词理解</strong>
             <small>{learner.name} · 中文解释 · 可继续追问</small>
           </div>
         </div>
-        <button aria-label="关闭划词理解" onClick={() => void hideQuickExplainer()}>
-          ×
-        </button>
+        <div className="quick-window-actions">
+          <WindowPinButton onStatusChange={setMessage} />
+          <button
+            type="button"
+            className="quick-window-action quick-window-close"
+            aria-label="关闭划词理解"
+            title="关闭"
+            onClick={() => void hideQuickExplainer()}
+          >
+            ×
+          </button>
+        </div>
       </header>
 
       <div className="quick-explainer-layout">
