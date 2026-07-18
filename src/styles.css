@@ -621,6 +621,10 @@ input[type="file"] {
   margin-top: 18px;
 }
 
+.update-settings-card {
+  margin-top: 18px;
+}
+
 .ai-settings-form {
   display: grid;
   grid-template-columns: 0.8fr 1.4fr 1fr 1fr;
@@ -717,6 +721,33 @@ input[type="file"] {
 .ai-settings-actions .settings-message {
   flex: 1;
   margin-top: 0;
+}
+
+.update-settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.update-settings-actions .settings-message {
+  flex: 1;
+  margin-top: 0;
+}
+
+.settings-message.update-ready {
+  color: #695019;
+  background: #faedc8;
+}
+
+.update-notes {
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  white-space: pre-wrap;
+  border-radius: 12px;
+  background: #f8f3e8;
+  font-size: 13px;
 }
 
 .settings-card h2 {

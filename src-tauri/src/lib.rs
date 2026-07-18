@@ -127,6 +127,8 @@ fn hide_quick_explainer(app: tauri::AppHandle) {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let quick_capture_status = quick_capture::register(app);
             app.manage(quick_capture_status);

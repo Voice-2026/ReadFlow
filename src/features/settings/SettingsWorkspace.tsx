@@ -12,6 +12,12 @@ import {
   updateQuickExplanationShortcut,
   type QuickCaptureStatus,
 } from "../../services/desktop/quickCapture";
+import {
+  checkForAppUpdate,
+  getAppVersion,
+  installAppUpdate,
+  type AppUpdateStatus,
+} from "../../services/desktop/appUpdates";
 
 type SettingsWorkspaceProps = {
   aiStatus: AiConfigurationStatus;
@@ -107,6 +113,12 @@ export function SettingsWorkspace({
   const [testingAi, setTestingAi] = useState(false);
   const [loadingProvider, setLoadingProvider] = useState(false);
   const [clearingApiKey, setClearingApiKey] = useState(false);
+  const [appVersion, setAppVersion] = useState("读取中…");
+  const [updateStatus, setUpdateStatus] = useState<AppUpdateStatus>({
+    kind: "checking",
+    message: "正在检查更新",
+    update: null,
+  });
 
   useEffect(() => {
     setPendingShortcut(quickCaptureStatus.shortcutValue);
@@ -125,6 +137,36 @@ export function SettingsWorkspace({
     setHasApiKey(aiStatus.hasApiKey);
     setAiMessage(aiStatus.message);
   }, [aiStatus]);
+
+  useEffect(() => {
+    void getAppVersion()
+      .then(setAppVersion)
+      .catch(() => setAppVersion("未知"));
+    void refreshAppUpdate();
+  }, []);
+
+  async function refreshAppUpdate() {
+    setUpdateStatus({ kind: "checking", message: "正在检查更新", update: null });
+    setUpdateStatus(await checkForAppUpdate());
+  }
+
+  async function installAvailableUpdate() {
+    if (!updateStatus.update) return;
+    setUpdateStatus({
+      kind: "installing",
+      message: `正在下载并安装 v${updateStatus.update.version}…`,
+      update: updateStatus.update,
+    });
+    try {
+      await installAppUpdate(updateStatus.update);
+    } catch (error) {
+      setUpdateStatus({
+        kind: "error",
+        message: error instanceof Error ? error.message : "安装更新失败，请稍后重试",
+        update: null,
+      });
+    }
+  }
 
   function beginRecording() {
     setRecording(true);
@@ -442,6 +484,46 @@ export function SettingsWorkspace({
             {savingAi ? "保存中…" : "保存 AI 配置"}
           </button>
         </div>
+      </article>
+
+      <article className="settings-card update-settings-card">
+        <div>
+          <span className="settings-label">About & Updates</span>
+          <h2>版本与更新</h2>
+          <p>
+            当前版本 <strong>v{appVersion}</strong>。ReadFlow 会在打开设置时检查新版本；发现更新后，由你确认下载安装并自动重启。
+          </p>
+        </div>
+
+        <div className="update-settings-actions">
+          <span
+            className={`settings-message ${
+              updateStatus.kind === "error" ? "error" : updateStatus.kind === "available" ? "update-ready" : ""
+            }`}
+          >
+            {updateStatus.message}
+          </span>
+          <button
+            className="secondary-button"
+            disabled={updateStatus.kind === "checking" || updateStatus.kind === "installing"}
+            onClick={() => void refreshAppUpdate()}
+          >
+            {updateStatus.kind === "checking" ? "检查中…" : "检查更新"}
+          </button>
+          {updateStatus.kind === "available" && (
+            <button className="primary-button" onClick={() => void installAvailableUpdate()}>
+              下载并安装 v{updateStatus.update.version}
+            </button>
+          )}
+          {updateStatus.kind === "installing" && (
+            <button className="primary-button" disabled>
+              正在安装…
+            </button>
+          )}
+        </div>
+        {updateStatus.kind === "available" && updateStatus.update.body && (
+          <p className="update-notes">更新说明：{updateStatus.update.body}</p>
+        )}
       </article>
     </section>
   );

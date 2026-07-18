@@ -1,7 +1,7 @@
 {
   "name": "readflow",
   "private": true,
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "build": "tsc && vite build",
     "build:desktop": "npm run runtime:build && npm run build",
     "runtime:build": "node scripts/build-ai-runtime.mjs",
+    "release:manifest": "node scripts/create-updater-manifest.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -18,7 +19,9 @@
     "@earendil-works/pi-ai": "^0.80.6",
     "@phosphor-icons/react": "^2.1.10",
     "@tauri-apps/api": "^2.8.0",
+    "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-shell": "^2.3.5",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "typebox": "^1.1.38"
