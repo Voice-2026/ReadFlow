@@ -1,6 +1,6 @@
 [package]
 name = "readflow"
-version = "0.1.4"
+version = "0.1.5"
 description = "ReadFlow AI English learning workbench"
 authors = ["fanpeng"]
 edition = "2021"
