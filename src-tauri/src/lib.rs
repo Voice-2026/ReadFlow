@@ -109,6 +109,15 @@ fn update_quick_explanation_shortcut(
 }
 
 #[tauri::command]
+fn set_quick_capture_recording(
+    app: tauri::AppHandle,
+    status: tauri::State<'_, quick_capture::QuickCaptureState>,
+    recording: bool,
+) -> Result<(), String> {
+    quick_capture::set_shortcut_recording(&app, status.inner(), recording)
+}
+
+#[tauri::command]
 fn open_translation_workbench(app: tauri::AppHandle, text: String) -> Result<(), String> {
     quick_capture::open_translation_workbench(&app, text)
 }
@@ -146,6 +155,7 @@ pub fn run() {
             get_latest_quick_explanation_payload,
             update_quick_capture_shortcut,
             update_quick_explanation_shortcut,
+            set_quick_capture_recording,
             open_translation_workbench,
             hide_quick_translator,
             hide_quick_explainer,

@@ -4,7 +4,9 @@ import {
   confirmVocabularySuggestion,
   loadTranslationRecords,
   saveTranslationRecord,
+  upsertVocabularyCandidates,
 } from "../../services/storage/learnerRepository";
+import { refreshLearningProfile } from "../../services/learning/profileUpdater";
 import type {
   Learner,
   TranslationResult,
@@ -109,6 +111,12 @@ export function TranslationWorkspace({
       setResult(nextResult);
       setMessage("翻译完成");
 
+      upsertVocabularyCandidates(
+        learner.id,
+        nextResult.vocabulary.map((candidate) => ({ ...candidate, sourceType: "translation" })),
+      );
+      void refreshLearningProfile(learner).catch(() => undefined);
+
       if (saveRecord) {
         saveTranslationRecord({
           id: crypto.randomUUID(),
@@ -133,6 +141,7 @@ export function TranslationWorkspace({
   function confirmSuggestion(suggestion: VocabularySuggestion, state: VocabularyState) {
     confirmVocabularySuggestion(learner.id, suggestion, state);
     setConfirmedTerms((current) => ({ ...current, [suggestion.term]: state }));
+    void refreshLearningProfile(learner).catch(() => undefined);
   }
 
   return (

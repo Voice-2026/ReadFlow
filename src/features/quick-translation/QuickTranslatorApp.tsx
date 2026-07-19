@@ -12,7 +12,9 @@ import {
 import {
   loadActiveLearnerId,
   loadLearners,
+  upsertVocabularyCandidates,
 } from "../../services/storage/learnerRepository";
+import { refreshLearningProfile } from "../../services/learning/profileUpdater";
 import {
   loadQuickTranslationHistory,
   saveQuickTranslationHistory,
@@ -72,6 +74,14 @@ export function QuickTranslatorApp() {
         createdAt: new Date().toISOString(),
       };
       saveQuickTranslationHistory(record);
+      upsertVocabularyCandidates(
+        learner.id,
+        (nextResult.vocabulary ?? []).map((candidate) => ({
+          ...candidate,
+          sourceType: "quick-translation" as const,
+        })),
+      );
+      void refreshLearningProfile(learner).catch(() => undefined);
       setHistory((records) => [record, ...records].slice(0, 100));
       setCurrentRecordId(record.id);
       setResult(nextResult);
@@ -82,7 +92,7 @@ export function QuickTranslatorApp() {
     } finally {
       if (requestId === requestSequence.current) setLoading(false);
     }
-  }, [learner.id]);
+  }, [learner]);
 
   const acceptCapturedPayload = useCallback(
     (payload: QuickCapturePayload) => {

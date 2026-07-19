@@ -12,7 +12,9 @@ import {
 import {
   loadActiveLearnerId,
   loadLearners,
+  upsertVocabularyCandidates,
 } from "../../services/storage/learnerRepository";
+import { refreshLearningProfile } from "../../services/learning/profileUpdater";
 import {
   loadQuickExplanationHistory,
   saveQuickExplanationHistory,
@@ -92,6 +94,17 @@ export function QuickExplainerApp() {
           createdAt: new Date().toISOString(),
         };
         saveQuickExplanationHistory(record);
+        upsertVocabularyCandidates(
+          learner.id,
+          nextResult.terms.map((term) => ({
+            term: term.term,
+            meaningInContext: term.meaning,
+            sourceSentence: text,
+            reason: "划词理解中的重点表达",
+            sourceType: "quick-explanation" as const,
+          })),
+        );
+        void refreshLearningProfile(learner).catch(() => undefined);
         setHistory((records) => [record, ...records].slice(0, 100));
         setCurrentRecordId(record.id);
         setResult(nextResult);

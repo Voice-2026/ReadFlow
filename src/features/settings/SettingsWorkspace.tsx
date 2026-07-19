@@ -8,6 +8,7 @@ import {
   type AiConfigurationStatus,
 } from "../../services/ai/aiGateway";
 import {
+  setQuickCaptureRecording,
   updateQuickCaptureShortcut,
   updateQuickExplanationShortcut,
   type QuickCaptureStatus,
@@ -96,6 +97,7 @@ export function SettingsWorkspace({
   const [message, setMessage] = useState(quickCaptureStatus.message);
   const [saving, setSaving] = useState(false);
   const recorderRef = useRef<HTMLButtonElement>(null);
+  const resumeShortcutTimerRef = useRef<number | null>(null);
   const [recordingExplanation, setRecordingExplanation] = useState(false);
   const [pendingExplanationShortcut, setPendingExplanationShortcut] = useState(
     quickExplanationStatus.shortcutValue,
@@ -145,6 +147,55 @@ export function SettingsWorkspace({
     void refreshAppUpdate();
   }, []);
 
+  useEffect(() => {
+    const isRecording = recording || recordingExplanation;
+    if (!isRecording) return;
+
+    function captureShortcutFromWindow(event: KeyboardEvent) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      const setCurrentRecording = recording ? setRecording : setRecordingExplanation;
+      const setCurrentMessage = recording ? setMessage : setExplanationMessage;
+      const setCurrentShortcut = recording
+        ? setPendingShortcut
+        : setPendingExplanationShortcut;
+
+      if (event.code === "Escape") {
+        setCurrentRecording(false);
+        setCurrentMessage("已取消录制");
+        void setQuickCaptureRecording(false);
+        return;
+      }
+      if (modifierCodes.has(event.code)) {
+        setCurrentMessage("继续按下一个字母、数字或功能键");
+        return;
+      }
+
+      try {
+        setCurrentShortcut(shortcutFromEvent(event));
+        setCurrentRecording(false);
+        setCurrentMessage("新组合已录制，保存后立即生效");
+        resumeQuickCaptureAfterKeyRelease();
+      } catch (error) {
+        setCurrentMessage(error instanceof Error ? error.message : "无法识别这个快捷键");
+      }
+    }
+
+    window.addEventListener("keydown", captureShortcutFromWindow, true);
+    return () => window.removeEventListener("keydown", captureShortcutFromWindow, true);
+  }, [recording, recordingExplanation]);
+
+  useEffect(
+    () => () => {
+      if (resumeShortcutTimerRef.current !== null) {
+        window.clearTimeout(resumeShortcutTimerRef.current);
+      }
+      void setQuickCaptureRecording(false);
+    },
+    [],
+  );
+
   async function refreshAppUpdate() {
     setUpdateStatus({ kind: "checking", message: "正在检查更新", update: null });
     setUpdateStatus(await checkForAppUpdate());
@@ -169,34 +220,17 @@ export function SettingsWorkspace({
   }
 
   function beginRecording() {
-    setRecording(true);
-    setMessage("请按下新的快捷键组合，Esc 取消");
-    requestAnimationFrame(() => recorderRef.current?.focus());
-  }
-
-  function captureShortcut(event: React.KeyboardEvent<HTMLButtonElement>) {
-    if (!recording) return;
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (event.code === "Escape") {
-      setRecording(false);
-      setMessage("已取消录制");
-      return;
-    }
-    if (modifierCodes.has(event.code)) {
-      setMessage("继续按下一个字母、数字或功能键");
-      return;
-    }
-
-    try {
-      const shortcut = shortcutFromEvent(event);
-      setPendingShortcut(shortcut);
-      setRecording(false);
-      setMessage("新组合已录制，保存后立即生效");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "无法识别这个快捷键");
-    }
+    setRecordingExplanation(false);
+    void setQuickCaptureRecording(true)
+      .then(() => {
+        setRecording(true);
+        setMessage("请按下新的快捷键组合，Esc 取消");
+        requestAnimationFrame(() => recorderRef.current?.focus());
+      })
+      .catch((error) => {
+        setRecording(false);
+        setMessage(error instanceof Error ? error.message : "无法暂停当前快捷键");
+      });
   }
 
   async function saveShortcut() {
@@ -213,34 +247,34 @@ export function SettingsWorkspace({
   }
 
   function beginExplanationRecording() {
-    setRecordingExplanation(true);
-    setExplanationMessage("请按下新的快捷键组合，Esc 取消");
-    requestAnimationFrame(() => explanationRecorderRef.current?.focus());
+    setRecording(false);
+    void setQuickCaptureRecording(true)
+      .then(() => {
+        setRecordingExplanation(true);
+        setExplanationMessage("请按下新的快捷键组合，Esc 取消");
+        requestAnimationFrame(() => explanationRecorderRef.current?.focus());
+      })
+      .catch((error) => {
+        setRecordingExplanation(false);
+        setExplanationMessage(error instanceof Error ? error.message : "无法暂停当前快捷键");
+      });
   }
 
-  function captureExplanationShortcut(event: React.KeyboardEvent<HTMLButtonElement>) {
-    if (!recordingExplanation) return;
-    event.preventDefault();
-    event.stopPropagation();
+  function resumeQuickCaptureAfterKeyRelease() {
+    let resumed = false;
+    const resume = () => {
+      if (resumed) return;
+      resumed = true;
+      window.removeEventListener("keyup", resume, true);
+      if (resumeShortcutTimerRef.current !== null) {
+        window.clearTimeout(resumeShortcutTimerRef.current);
+        resumeShortcutTimerRef.current = null;
+      }
+      void setQuickCaptureRecording(false);
+    };
 
-    if (event.code === "Escape") {
-      setRecordingExplanation(false);
-      setExplanationMessage("已取消录制");
-      return;
-    }
-    if (modifierCodes.has(event.code)) {
-      setExplanationMessage("继续按下一个字母、数字或功能键");
-      return;
-    }
-
-    try {
-      const shortcut = shortcutFromEvent(event);
-      setPendingExplanationShortcut(shortcut);
-      setRecordingExplanation(false);
-      setExplanationMessage("新组合已录制，保存后立即生效");
-    } catch (error) {
-      setExplanationMessage(error instanceof Error ? error.message : "无法识别这个快捷键");
-    }
+    window.addEventListener("keyup", resume, { capture: true, once: true });
+    resumeShortcutTimerRef.current = window.setTimeout(resume, 1500);
   }
 
   async function saveExplanationShortcut() {
@@ -349,9 +383,9 @@ export function SettingsWorkspace({
           </div>
           <button
             ref={recorderRef}
+            type="button"
             className={`shortcut-recorder ${recording ? "recording" : ""}`}
             onClick={beginRecording}
-            onKeyDown={captureShortcut}
           >
             {recording ? "正在录制，请按组合键…" : "录制新快捷键"}
           </button>
@@ -383,9 +417,9 @@ export function SettingsWorkspace({
           </div>
           <button
             ref={explanationRecorderRef}
+            type="button"
             className={`shortcut-recorder ${recordingExplanation ? "recording" : ""}`}
             onClick={beginExplanationRecording}
-            onKeyDown={captureExplanationShortcut}
           >
             {recordingExplanation ? "正在录制，请按组合键…" : "录制新快捷键"}
           </button>
@@ -529,7 +563,7 @@ export function SettingsWorkspace({
   );
 }
 
-function shortcutFromEvent(event: React.KeyboardEvent): string {
+function shortcutFromEvent(event: Pick<KeyboardEvent, "metaKey" | "ctrlKey" | "altKey" | "shiftKey" | "code">): string {
   const modifiers: string[] = [];
   if (event.metaKey) modifiers.push("Command");
   if (event.ctrlKey) modifiers.push("Control");

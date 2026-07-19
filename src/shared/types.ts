@@ -21,6 +21,17 @@ export type VocabularyItem = {
   forgottenCount: number;
   nextReviewAt?: string;
   updatedAt: string;
+  kind?: "word" | "phrase";
+  sourceTypes?: VocabularySourceType[];
+  firstSeenAt?: string;
+  lastReviewedAt?: string;
+};
+
+export type VocabularySourceType = "translation" | "quick-translation" | "quick-explanation" | "reading" | "manual";
+
+export type VocabularyCandidate = VocabularySuggestion & {
+  sourceType: VocabularySourceType;
+  kind?: "word" | "phrase";
 };
 
 export type TranslationRecord = {
@@ -67,6 +78,7 @@ export type QuickTranslationResult = {
   sourceLanguage: "zh" | "en";
   targetLanguage: "zh" | "en";
   translation: string;
+  vocabulary?: VocabularySuggestion[];
 };
 
 export type QuickExplanationTerm = {
@@ -135,7 +147,28 @@ export type ReadingAttempt = {
   translationAnswer: string;
   mainIdeaAnswer: string;
   feedback?: string;
+  materialId?: string;
+  evaluation?: ReadingEvaluation;
   createdAt: string;
+};
+
+export type ReadingMaterial = {
+  id: string;
+  learnerId: string;
+  topic: string;
+  focus: string;
+  title: string;
+  passage: string;
+  level: string;
+  instructions: string;
+  createdAt: string;
+};
+
+export type ReadingEvaluation = {
+  summary: string;
+  dimensions: Array<{ label: string; score: number; feedback: string; evidence: string }>;
+  nextStep: string;
+  vocabulary: VocabularySuggestion[];
 };
 
 export type ProfileDimension = {
@@ -143,4 +176,12 @@ export type ProfileDimension = {
   level: string;
   confidence: "待建立" | "低" | "中" | "高";
   evidence: string;
+  updatedAt?: string;
+};
+
+export type LearningProfile = {
+  learnerId: string;
+  dimensions: ProfileDimension[];
+  summary: string;
+  updatedAt: string;
 };

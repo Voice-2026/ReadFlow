@@ -1,62 +1,20 @@
-import type { Learner, ProfileDimension } from "../../shared/types";
+import { useEffect, useState } from "react";
+import { loadLearningProfile } from "../../services/storage/learnerRepository";
+import { refreshLearningProfile } from "../../services/learning/profileUpdater";
+import type { Learner } from "../../shared/types";
 
-const starterDimensions: ProfileDimension[] = [
-  {
-    label: "单词水平",
-    level: "等待学习记录",
-    confidence: "待建立",
-    evidence: "完成翻译和单词确认后建立",
-  },
-  {
-    label: "阅读水平",
-    level: "等待首次摸底",
-    confidence: "待建立",
-    evidence: "需要至少一次翻译与主旨回答",
-  },
-  {
-    label: "学习意愿",
-    level: "由目标与行为共同判断",
-    confidence: "待建立",
-    evidence: "不会仅根据 AI 印象贴标签",
-  },
-  {
-    label: "难度偏好",
-    level: "自适应",
-    confidence: "待建立",
-    evidence: "根据主动调难度和完成情况更新",
-  },
-];
+const waiting = ["单词水平", "阅读水平", "翻译特点", "难度偏好"];
 
 export function ProfileWorkspace({ learner }: { learner: Learner }) {
-  return (
-    <section className="workspace">
-      <header className="profile-hero">
-        <span className="profile-avatar">{learner.avatar}</span>
-        <div>
-          <span className="eyebrow">AI English Portrait</span>
-          <h1>{learner.name} 的英语画像</h1>
-          <p>画像中的每个判断都会保留证据、可信度和更新时间，并允许学习者修正。</p>
-        </div>
-        <button className="secondary-button">开始首次摸底</button>
-      </header>
-
-      <div className="profile-grid">
-        {starterDimensions.map((dimension) => (
-          <article key={dimension.label} className="profile-card">
-            <span>{dimension.label}</span>
-            <strong>{dimension.level}</strong>
-            <p>{dimension.evidence}</p>
-            <small>可信度：{dimension.confidence}</small>
-          </article>
-        ))}
-      </div>
-
-      <article className="profile-note">
-        <strong>画像更新原则</strong>
-        <p>
-          AI 可以提出判断，但只有明确目标、摸底题、翻译作答、阅读作答和复习行为才能成为画像证据。不同学习者之间不会共享这些证据。
-        </p>
-      </article>
-    </section>
-  );
+  const [profile, setProfile] = useState(() => loadLearningProfile(learner.id));
+  const [message, setMessage] = useState(profile ? "画像会在翻译、复习和阅读完成后自动刷新。" : "完成一次有效学习后，AI 会根据真实证据建立画像。");
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    const next = loadLearningProfile(learner.id);
+    setProfile(next);
+    setMessage(next ? "画像会在翻译、复习和阅读完成后自动刷新。" : "完成一次有效学习后，AI 会根据真实证据建立画像。");
+  }, [learner.id]);
+  async function refresh() { setLoading(true); setMessage("正在根据已有学习记录更新画像…"); try { const next = await refreshLearningProfile(learner); setProfile(next); setMessage("画像已按当前学习记录更新。"); } catch (error) { setMessage(error instanceof Error ? error.message : "暂时无法更新画像"); } finally { setLoading(false); } }
+  const dimensions = profile?.dimensions ?? waiting.map((label) => ({ label, level: "等待建立", confidence: "待建立" as const, evidence: "完成翻译、复习或阅读作答后自动生成", updatedAt: undefined }));
+  return <section className="workspace profile-workspace"><header className="profile-hero"><span className="profile-avatar">{learner.avatar}</span><div><span className="eyebrow">AI English Portrait</span><h1>{learner.name} 的英语画像</h1><p>不是一次性测评。每次真实学习行为都会补充证据，画像自动更新。</p></div><button className="secondary-button" disabled={loading} onClick={() => void refresh()}>{loading ? "更新中…" : "立即更新"}</button></header><p className="profile-status">{message}</p><div className="profile-grid">{dimensions.map((dimension) => <article key={dimension.label} className="profile-card"><span>{dimension.label}</span><strong>{dimension.level}</strong><p>{dimension.evidence}</p><small>可信度：{dimension.confidence}{dimension.updatedAt ? ` · 更新于 ${new Date(dimension.updatedAt).toLocaleDateString()}` : ""}</small></article>)}</div>{profile?.summary && <article className="profile-note"><strong>当前学习建议</strong><p>{profile.summary}</p></article>}</section>;
 }

@@ -77,6 +77,10 @@ export async function updateQuickExplanationShortcut(
   }
 }
 
+export async function setQuickCaptureRecording(recording: boolean): Promise<void> {
+  await invoke("set_quick_capture_recording", { recording });
+}
+
 export async function openTranslationWorkbench(text: string): Promise<void> {
   await invoke("open_translation_workbench", { text });
 }

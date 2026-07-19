@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
     str::FromStr,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
     time::Duration,
@@ -37,6 +37,7 @@ pub struct QuickCaptureState {
     statuses: Mutex<QuickCaptureStatuses>,
     latest_payloads: Mutex<QuickCapturePayloads>,
     next_payload_id: AtomicU64,
+    recording_shortcut: AtomicBool,
 }
 
 #[derive(Default)]
@@ -84,6 +85,7 @@ impl QuickCaptureState {
             }),
             latest_payloads: Mutex::new(QuickCapturePayloads::default()),
             next_payload_id: AtomicU64::new(1),
+            recording_shortcut: AtomicBool::new(false),
         }
     }
 
@@ -115,6 +117,18 @@ impl QuickCaptureState {
             CaptureKind::Translation => statuses.translation = status,
             CaptureKind::Explanation => statuses.explanation = status,
         }
+    }
+
+    fn begin_recording_shortcut(&self) -> bool {
+        !self.recording_shortcut.swap(true, Ordering::AcqRel)
+    }
+
+    fn finish_recording_shortcut(&self) -> bool {
+        self.recording_shortcut.swap(false, Ordering::AcqRel)
+    }
+
+    fn is_recording_shortcut(&self) -> bool {
+        self.recording_shortcut.load(Ordering::Acquire)
     }
 
     fn next_payload_id(&self) -> u64 {
@@ -156,6 +170,13 @@ pub fn register(app: &mut tauri::App) -> QuickCaptureState {
     let config = load_config(app).unwrap_or_else(|_| default_config());
     let plugin = tauri_plugin_global_shortcut::Builder::new()
         .with_handler(move |app, shortcut, event| {
+            if app
+                .state::<QuickCaptureState>()
+                .is_recording_shortcut()
+            {
+                return;
+            }
+
             // Wait until all modifier keys are released. The macOS clipboard fallback
             // sends Command+C and can fail if the original shortcut is still held.
             if event.state() != ShortcutState::Released {
@@ -218,6 +239,28 @@ pub fn update_explanation_shortcut(
     shortcut_value: String,
 ) -> Result<QuickCaptureStatus, String> {
     update_shortcut(app, state, CaptureKind::Explanation, shortcut_value)
+}
+
+pub fn set_shortcut_recording(
+    app: &AppHandle,
+    state: &QuickCaptureState,
+    recording: bool,
+) -> Result<(), String> {
+    if recording {
+        if !state.begin_recording_shortcut() {
+            return Ok(());
+        }
+        if let Err(error) = unregister_active_shortcuts(app, state) {
+            state.finish_recording_shortcut();
+            return Err(error);
+        }
+        return Ok(());
+    }
+
+    if state.finish_recording_shortcut() {
+        restore_active_shortcuts(app, state);
+    }
+    Ok(())
 }
 
 fn update_shortcut(
@@ -504,6 +547,34 @@ fn restore_previous_shortcut(app: &AppHandle, status: &QuickCaptureStatus) {
     }
 }
 
+fn unregister_active_shortcuts(
+    app: &AppHandle,
+    state: &QuickCaptureState,
+) -> Result<(), String> {
+    let translation = state.translation_status();
+    let explanation = state.explanation_status();
+    let mut unregistered = Vec::new();
+
+    for status in [translation, explanation] {
+        if !status.registered {
+            continue;
+        }
+        if let Err(error) = app.global_shortcut().unregister(status.shortcut_value.as_str()) {
+            for previous in unregistered {
+                restore_previous_shortcut(app, &previous);
+            }
+            return Err(format!("无法暂停当前快捷键：{error}"));
+        }
+        unregistered.push(status);
+    }
+    Ok(())
+}
+
+fn restore_active_shortcuts(app: &AppHandle, state: &QuickCaptureState) {
+    restore_previous_shortcut(app, &state.translation_status());
+    restore_previous_shortcut(app, &state.explanation_status());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,5 +595,17 @@ mod tests {
         let config = parse_config(r#"{"shortcut":"Command+Shift+KeyT"}"#).unwrap();
         assert_eq!(config.translation_shortcut, "Command+Shift+KeyT");
         assert_eq!(config.explanation_shortcut, DEFAULT_EXPLANATION_SHORTCUT);
+    }
+
+    #[test]
+    fn ignores_global_capture_while_recording_a_shortcut() {
+        let status = unavailable_status("Option+Digit1", "测试".to_string());
+        let state = QuickCaptureState::new(status.clone(), status);
+
+        assert!(!state.is_recording_shortcut());
+        assert!(state.begin_recording_shortcut());
+        assert!(state.is_recording_shortcut());
+        assert!(state.finish_recording_shortcut());
+        assert!(!state.is_recording_shortcut());
     }
 }
