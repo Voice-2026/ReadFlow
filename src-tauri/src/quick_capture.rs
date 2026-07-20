@@ -7,7 +7,6 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
-    time::Duration,
 };
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -185,7 +184,13 @@ pub fn register(app: &mut tauri::App) -> QuickCaptureState {
 
             let app = app.clone();
             let shortcut = shortcut.clone();
-            std::thread::spawn(move || capture_selection(app, shortcut));
+            let capture_app = app.clone();
+            // macOS input-source APIs used by the clipboard fallback must run on
+            // the AppKit main thread. Running this in a Rust worker thread causes
+            // dispatch_assert_queue to abort the whole application.
+            if let Err(error) = app.run_on_main_thread(move || capture_selection(capture_app, shortcut)) {
+                eprintln!("无法在主线程执行快捷选区捕获：{error}");
+            }
         })
         .build();
 
@@ -374,10 +379,8 @@ fn capture_selection(app: AppHandle, shortcut: Shortcut) {
     };
     state.replace_payload(kind, payload.clone());
     show_window(&app, window);
-    // A hidden macOS WebView may resume after the native window is already visible.
-    // Give its event loop a brief chance to wake up; the frontend also pulls the
-    // cached payload again whenever the window gains focus.
-    std::thread::sleep(Duration::from_millis(120));
+    // The frontend also pulls the cached payload whenever the window gains focus,
+    // so the main AppKit thread must not be blocked waiting for the hidden WebView.
     let _ = app.emit_to(window, event, payload);
 }
 
